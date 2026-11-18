@@ -1,0 +1,639 @@
+<!doctype html>
+<html lang="it">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Neurona-i</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="Simulatore biofisico multicompartimentale di un neurone piramidale corticale: canali ionici, recettori, assone mielinizzato e sinapsi.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap">
+<style>
+/* Layout: banco di elettrofisiologia — preparato (morfologia) a sinistra, strumenti (oscilloscopio, ispettore) a destra, pannello comandi sotto. */
+:root {
+  --bg: #e9eef0;
+  --panel: #f6f9fa;
+  --ink: #12202a;
+  --muted: #5a6b75;
+  --line: #ccd6db;
+  --grid: #dfe6e9;
+  --accent: #0a7c76;
+  --accent2: #c2410c;
+  --exc: #2f8a57;
+  --inh: #b8255f;
+  --nmda: #6b4fbb;
+  --gabab: #8a5a14;
+  --myelin: #efe6cf;
+  --chip-on: #12202a;
+  --chip-on-fg: #f6f9fa;
+  --font-display: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0c1317; --panel: #121c21; --ink: #e2eaee; --muted: #8b9ea8; --line: #24333b; --grid: #1a262c;
+    --accent: #3cc8bd; --accent2: #f39a5b; --exc: #5bd38f; --inh: #f2689a; --nmda: #a58cf0; --gabab: #d9a54a;
+    --myelin: #3a3425; --chip-on: #e2eaee; --chip-on-fg: #0c1317; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0c1317; --panel: #121c21; --ink: #e2eaee; --muted: #8b9ea8; --line: #24333b; --grid: #1a262c;
+  --accent: #3cc8bd; --accent2: #f39a5b; --exc: #5bd38f; --inh: #f2689a; --nmda: #a58cf0; --gabab: #d9a54a;
+  --myelin: #3a3425; --chip-on: #e2eaee; --chip-on-fg: #0c1317; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 14px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 40px;
+}
+.wrap { max-width: 1320px; margin: 0 auto; display: grid; gap: 16px; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; }
+h1 { font-size: 30px; font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+h3 { font-size: 16px; font-weight: 600; }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+header.top { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px 24px; }
+header.top p { margin: 4px 0 0; color: var(--muted); max-width: 70ch; }
+.readouts { display: flex; flex-wrap: wrap; gap: 8px; }
+.readout { border: 1px solid var(--line); background: var(--panel); border-radius: 6px; padding: 6px 10px; min-width: 104px; }
+.readout span { display: block; font-size: 11px; color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
+.readout b { font-family: var(--font-mono); font-weight: 500; font-size: 17px; font-variant-numeric: tabular-nums; }
+.rig { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 16px; align-items: start; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; min-width: 0; }
+.panel-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 6px 12px; margin-bottom: 10px; }
+.hint { color: var(--muted); font-size: 12.5px; margin: 8px 0 0; }
+#morph { width: 100%; display: block; aspect-ratio: 600 / 760; max-width: 100%; cursor: crosshair; touch-action: manipulation; }
+.colorbar { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; font-size: 11.5px; color: var(--muted); margin-top: 6px; }
+.colorbar i { height: 8px; border-radius: 4px; background: linear-gradient(90deg, #2b4bb5 0%, #5e7fa8 15%, #9a9a7a 27%, #e3a33b 38%, #e4572e 69%, #b5179e 100%); }
+.right { display: grid; gap: 16px; min-width: 0; }
+.trace { display: grid; gap: 4px; }
+.trace + .trace { margin-top: 10px; }
+.trace canvas { width: 100%; height: 148px; display: block; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--muted); }
+.legend em { font-style: normal; display: inline-flex; align-items: center; gap: 6px; }
+.legend em::before { content: ""; width: 14px; height: 3px; border-radius: 2px; background: var(--c); }
+.inspector { display: grid; gap: 12px; }
+.meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 6px 12px; font-size: 12.5px; }
+.meta div span { display: block; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+.meta div b { font-family: var(--font-mono); font-weight: 500; font-variant-numeric: tabular-nums; }
+.tablewrap { overflow-x: auto; }
+table.ch { width: 100%; border-collapse: collapse; font-size: 12.5px; min-width: 460px; }
+table.ch th { text-align: left; font-weight: 500; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; padding: 4px 6px; border-bottom: 1px solid var(--line); }
+table.ch td { padding: 4px 6px; border-bottom: 1px solid var(--grid); vertical-align: middle; }
+table.ch td.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.bar { height: 7px; background: var(--grid); border-radius: 4px; overflow: hidden; min-width: 80px; }
+.bar i { display: block; height: 100%; background: var(--accent); width: 0; }
+.blocked td { color: var(--muted); text-decoration: line-through; }
+.controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.group { display: grid; gap: 10px; align-content: start; }
+.field { display: grid; gap: 4px; }
+.field label { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; }
+.field label output { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--accent); }
+input[type="range"] { width: 100%; accent-color: var(--accent); }
+.btns { display: flex; flex-wrap: wrap; gap: 8px; }
+button, .chip { font: inherit; font-size: 13px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 6px; padding: 7px 11px; cursor: pointer; }
+button:hover, .chip:hover { border-color: var(--muted); }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--panel); font-weight: 600; }
+button:focus-visible, .chip:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 0; padding: 6px 10px; text-align: left; }
+.chip small { color: var(--muted); font-size: 11px; }
+.chip[aria-pressed="true"] { background: var(--chip-on); color: var(--chip-on-fg); border-color: var(--chip-on); }
+.chip[aria-pressed="true"] small { color: var(--chip-on-fg); opacity: 0.75; }
+.check { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+select { font: inherit; font-size: 13px; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+.notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.notes ul { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 6px; }
+.notes li { max-width: 68ch; }
+.notes p { margin: 8px 0 0; max-width: 68ch; }
+@media (max-width: 960px) { .rig { grid-template-columns: minmax(0, 1fr); } }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Neurona-i</h1>
+      <p>Neurone piramidale corticale simulato compartimento per compartimento: equazione del cavo, canali ionici voltaggio- e calcio-dipendenti, recettori ionotropici e metabotropici, assone mielinizzato e rilascio di vescicole.</p>
+    </div>
+    <div class="readouts" aria-live="off">
+      <div class="readout"><span>Tempo simulato</span><b id="r-t">0 ms</b></div>
+      <div class="readout"><span>V soma</span><b id="r-v">–</b></div>
+      <div class="readout"><span>Frequenza</span><b id="r-f">0 Hz</b></div>
+      <div class="readout"><span>Conduzione AIS→bottone</span><b id="r-d">–</b></div>
+      <div class="readout"><span>Vescicole rilasciate</span><b id="r-q">0</b></div>
+    </div>
+  </header>
+
+  <main class="rig">
+    <section class="panel" aria-labelledby="h-morph">
+      <div class="panel-head"><h2 id="h-morph">Preparato</h2><span class="hint" style="margin:0">colore = potenziale di membrana</span></div>
+      <canvas id="morph" width="600" height="760" aria-label="Morfologia del neurone colorata secondo il potenziale di membrana"></canvas>
+      <div class="colorbar"><span class="mono">−90 mV</span><i></i><span class="mono">+40 mV</span></div>
+      <p class="hint">Tocca un compartimento per spostarci l'elettrodo di registrazione (traccia verde acqua). I punti verdi sono fasci di afferenze eccitatorie, quelli magenta inibitorie: si illuminano quando rilasciano neurotrasmettitore.</p>
+    </section>
+
+    <div class="right">
+      <section class="panel" aria-labelledby="h-scope">
+        <div class="panel-head"><h2 id="h-scope">Oscilloscopio</h2><span class="hint mono" style="margin:0" id="sweep">finestra 400 ms</span></div>
+        <div class="trace">
+          <div class="legend"><em style="--c: var(--ink)">V soma</em><em style="--c: var(--accent)" id="lg-sel">V elettrodo</em><em style="--c: var(--accent2)">V bottone presinaptico</em></div>
+          <canvas id="tr-v" aria-label="Potenziale di membrana"></canvas>
+        </div>
+        <div class="trace">
+          <div class="legend"><em style="--c: var(--exc)">g AMPA</em><em style="--c: var(--nmda)">g NMDA</em><em style="--c: var(--inh)">g GABA-A</em><em style="--c: var(--gabab)">g GABA-B</em><span class="mono">nS, somma su tutto il neurone</span></div>
+          <canvas id="tr-g" aria-label="Conduttanze sinaptiche"></canvas>
+        </div>
+        <div class="trace">
+          <div class="legend"><em style="--c: var(--ink)">[Ca²⁺] soma</em><em style="--c: var(--accent2)">[Ca²⁺] bottone</em><em style="--c: var(--accent)">rilascio di vescicole</em><span class="mono">µM</span></div>
+          <canvas id="tr-c" aria-label="Concentrazione di calcio"></canvas>
+        </div>
+      </section>
+
+      <section class="panel inspector" aria-labelledby="h-insp">
+        <div class="panel-head" style="margin:0"><h2 id="h-insp">Compartimento sotto l'elettrodo</h2><h3 id="i-name">Soma</h3></div>
+        <div class="meta" id="i-meta"></div>
+        <div class="tablewrap">
+          <table class="ch">
+            <thead><tr><th>Canale</th><th>Densità</th><th>Frazione aperta</th><th>Corrente (uscente +)</th></tr></thead>
+            <tbody id="i-ch"></tbody>
+          </table>
+        </div>
+        <div class="tablewrap">
+          <table class="ch">
+            <thead><tr><th>Recettore</th><th>Fasci qui</th><th>Conduttanza</th><th>Inversione</th></tr></thead>
+            <tbody id="i-rec"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <section class="panel controls" aria-label="Comandi">
+    <div class="group">
+      <h2>Stimolazione</h2>
+      <div class="field">
+        <label for="c-inj">Corrente iniettata nel soma <output id="o-inj">0 pA</output></label>
+        <input id="c-inj" type="range" min="-300" max="400" step="10" value="0">
+      </div>
+      <div class="btns">
+        <button id="b-pulse" class="primary">Impulso 2 ms</button>
+        <button id="b-stimexc">Stimola il ramo</button>
+        <button id="b-stiminh">Scarica inibitoria</button>
+      </div>
+      <p class="hint" style="margin:0">"Stimola il ramo" recluta in sincronia il 12% delle afferenze eccitatorie del ramo sotto l'elettrodo, come un elettrodo di stimolazione extracellulare.</p>
+    </div>
+    <div class="group">
+      <h2>Ingressi sinaptici spontanei</h2>
+      <div class="field">
+        <label for="c-exc">Frequenza afferenze glutamatergiche <output id="o-exc">8 Hz</output></label>
+        <input id="c-exc" type="range" min="0" max="30" step="0.5" value="8">
+      </div>
+      <div class="field">
+        <label for="c-inh">Frequenza afferenze GABAergiche <output id="o-inh">8 Hz</output></label>
+        <input id="c-inh" type="range" min="0" max="40" step="0.5" value="8">
+      </div>
+      <p class="hint" style="margin:0">42 fasci eccitatori (840 assoni, circa 5000 contatti) e 11 inibitori (110 assoni) con rilascio stocastico e depressione a breve termine. Il GABA-B, metabotropico e cooperativo, si recluta davvero solo con inibizione sostenuta sopra i 20 Hz.</p>
+    </div>
+    <div class="group">
+      <h2>Farmacologia</h2>
+      <div class="chips" id="drugs"></div>
+    </div>
+    <div class="group">
+      <h2>Ambiente e preparato</h2>
+      <div class="field">
+        <label for="c-mg">[Mg²⁺] extracellulare <output id="o-mg">1.0 mM</output></label>
+        <input id="c-mg" type="range" min="0" max="3" step="0.1" value="1">
+      </div>
+      <div class="field">
+        <label for="c-temp">Temperatura <output id="o-temp">36 °C</output></label>
+        <input id="c-temp" type="range" min="22" max="40" step="0.5" value="36">
+      </div>
+      <label class="check"><input id="c-myelin" type="checkbox" checked> Assone mielinizzato (deseleziona per simulare la demielinizzazione)</label>
+      <div class="btns" style="align-items:center">
+        <label class="check" for="c-speed">Velocità</label>
+        <select id="c-speed">
+          <option value="0.002">0,002× (conduzione saltatoria)</option>
+          <option value="0.01">0,01×</option>
+          <option value="0.05">0,05×</option>
+          <option value="0.1" selected>0,1×</option>
+          <option value="0.25">0,25×</option>
+          <option value="1">1× tempo reale</option>
+        </select>
+        <button id="b-pause">Pausa</button>
+        <button id="b-reset">Azzera</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="notes">
+    <div class="panel">
+      <h2>Cosa è simulato</h2>
+      <ul>
+        <li><b>Struttura.</b> 37 compartimenti cilindrici: soma, tronco e ciuffo apicale, dendrite obliquo, due dendriti basali, segmento iniziale dell'assone, 5 internodi mielinizzati alternati a nodi di Ranvier, bottone presinaptico. Il potenziale segue l'equazione del cavo, risolta implicitamente con l'algoritmo di Hines (passo 25 µs).</li>
+        <li><b>Canali ionici.</b> Nav (m³h) e Kv rettificatore ritardato (n⁴) secondo Traub/Pospischil; Kv7 (corrente M, adattamento); Cav ad alta soglia (q²r); HCN (Ih) con gradiente crescente lungo il dendrite apicale; SK attivati dal Ca²⁺; leak. Le densità cambiano per regione: l'AIS e i nodi hanno 6–40 volte più Nav del soma, perciò lo spike nasce lì.</li>
+        <li><b>Recettori.</b> AMPA e GABA-A con cinetica a due stati (Destexhe 1994); NMDA con blocco da Mg²⁺ voltaggio-dipendente (Jahr e Stevens) e ingresso di Ca²⁺; GABA-B metabotropico con proteina G e attivazione cooperativa dei canali GIRK.</li>
+        <li><b>Calcio e rilascio.</b> Ca²⁺ in uno strato sottomembrana per ogni compartimento. Nel bottone 12 siti di rilascio con probabilità ∝ [Ca²⁺]⁴ (cooperatività della sinaptotagmina) e ricarica lenta, quindi la sinapsi in uscita si deprime con l'uso.</li>
+        <li><b>Temperatura.</b> Le cinetiche dei canali scalano con Q10 = 3.</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h2>Cosa non è simulato</h2>
+      <p>"In tutto e per tutto" non è possibile, per nessun modello. Questo modello scende fino al livello dei canali e dei recettori come popolazioni, ma tralascia:</p>
+      <ul>
+        <li>la geometria 3D reale (spine dendritiche, migliaia di ramificazioni) e la diffusione spaziale degli ioni;</li>
+        <li>le concentrazioni di Na⁺, K⁺ e Cl⁻, che restano fisse (potenziali di inversione costanti), e la pompa Na⁺/K⁺-ATPasi;</li>
+        <li>l'apertura stocastica dei singoli canali e la dinamica molecolare delle proteine;</li>
+        <li>le cascate di secondi messaggeri oltre GABA-B, l'espressione genica, il metabolismo, la glia;</li>
+        <li>la plasticità a lungo termine (LTP/LTD) e i neuromodulatori (dopamina, serotonina, acetilcolina).</li>
+      </ul>
+      <p>Ogni parametro ha un significato fisico (mS/cm², µF/cm², Ω·cm, nS per quanto) ed è modificabile in <span class="mono">neuron-core.js</span>.</p>
+    </div>
+  </section>
+</div>
+
+<script src="neuron-core.js"></script>
+<script>
+(function () {
+  'use strict';
+  const nrn = NeuronCore.createNeuron();
+  const DT = nrn.DT;
+  const comps = nrn.comps;
+  let sel = 0;
+  let paused = false;
+  let speed = 0.1;
+  let pulseSteps = 0;
+  let lastFrame = performance.now();
+
+  // ---------- colori dal tema ----------
+  let col = {};
+  function readColors() {
+    const cs = getComputedStyle(document.documentElement);
+    for (const k of ['bg', 'panel', 'ink', 'muted', 'line', 'grid', 'accent', 'accent2', 'exc', 'inh', 'nmda', 'gabab', 'myelin'])
+      col[k] = cs.getPropertyValue('--' + k).trim();
+  }
+  readColors();
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readColors);
+  new MutationObserver(readColors).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+  const STOPS = [[-90, [43, 75, 181]], [-70, [94, 127, 168]], [-55, [154, 154, 122]], [-40, [227, 163, 59]], [0, [228, 87, 46]], [40, [181, 23, 158]]];
+  function vColor(v) {
+    if (v <= STOPS[0][0]) return 'rgb(' + STOPS[0][1] + ')';
+    for (let k = 1; k < STOPS.length; k++) {
+      if (v <= STOPS[k][0]) {
+        const [v0, c0] = STOPS[k - 1], [v1, c1] = STOPS[k], f = (v - v0) / (v1 - v0);
+        return `rgb(${c0.map((c, j) => Math.round(c + (c1[j] - c) * f)).join(',')})`;
+      }
+    }
+    return 'rgb(' + STOPS[STOPS.length - 1][1] + ')';
+  }
+
+  // ---------- registrazione ----------
+  const WIN = 400, SAMPLE = 4, NS = Math.round(WIN / (DT * SAMPLE));
+  const buf = { vs: new Float32Array(NS).fill(NaN), vx: new Float32Array(NS).fill(NaN), vt: new Float32Array(NS).fill(NaN),
+    gA: new Float32Array(NS).fill(NaN), gN: new Float32Array(NS).fill(NaN), gGA: new Float32Array(NS).fill(NaN), gGB: new Float32Array(NS).fill(NaN),
+    cs: new Float32Array(NS).fill(NaN), ct: new Float32Array(NS).fill(NaN), rel: new Uint8Array(NS) };
+  let wp = 0, stepCount = 0, lastRelCount = 0;
+  function clearBuffers() { for (const k in buf) buf[k].fill(k === 'rel' ? 0 : NaN); wp = 0; }
+
+  function record() {
+    const g = nrn.synConductances();
+    buf.vs[wp] = nrn.V[0]; buf.vx[wp] = nrn.V[sel]; buf.vt[wp] = nrn.V[nrn.term];
+    buf.gA[wp] = g.AMPA; buf.gN[wp] = g.NMDA; buf.gGA[wp] = g.GABAA; buf.gGB[wp] = g.GABAB;
+    buf.cs[wp] = nrn.ca[0]; buf.ct[wp] = nrn.ca[nrn.term];
+    const rc = nrn.totalReleased; buf.rel[wp] = Math.min(255, rc - lastRelCount); lastRelCount = rc;
+    wp = (wp + 1) % NS;
+  }
+
+  // ---------- canvas helpers ----------
+  function fit(canvas) {
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const r = canvas.getBoundingClientRect();
+    const w = Math.max(1, Math.round(r.width * dpr)), h = Math.max(1, Math.round(r.height * dpr));
+    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+    return { w, h, dpr };
+  }
+  const trV = document.getElementById('tr-v'), trG = document.getElementById('tr-g'), trC = document.getElementById('tr-c');
+  const morph = document.getElementById('morph');
+
+  function drawTrace(canvas, series, yMin, yMax, unit, ticks, relTicks) {
+    const { w, h, dpr } = fit(canvas);
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    ctx.scale(dpr, dpr);
+    const W = w / dpr, H = h / dpr, L = 40, R = 6, T = 6, B = 16;
+    const pw = W - L - R, ph = H - T - B;
+    const y = v => T + ph * (1 - (v - yMin) / (yMax - yMin));
+    ctx.font = '10.5px "IBM Plex Mono", ui-monospace, monospace';
+    ctx.fillStyle = col.muted; ctx.strokeStyle = col.grid; ctx.lineWidth = 1;
+    ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+    for (const tv of ticks) {
+      const yy = Math.round(y(tv)) + 0.5;
+      ctx.beginPath(); ctx.moveTo(L, yy); ctx.lineTo(W - R, yy); ctx.stroke();
+      ctx.fillText(String(tv), L - 5, yy);
+    }
+    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    for (let ms = 0; ms <= WIN; ms += 100) {
+      const xx = Math.round(L + pw * ms / WIN) + 0.5;
+      ctx.beginPath(); ctx.moveTo(xx, T); ctx.lineTo(xx, T + ph); ctx.stroke();
+      ctx.fillText(ms + (ms === WIN ? ' ms' : ''), Math.min(xx, W - R - 14), H - 3);
+    }
+    ctx.save(); ctx.beginPath(); ctx.rect(L, T, pw, ph); ctx.clip();
+    const gap = Math.round(NS * 0.012);
+    for (const s of series) {
+      ctx.strokeStyle = s.color; ctx.lineWidth = s.width || 1.4; ctx.beginPath();
+      let pen = false;
+      const stride = Math.max(1, Math.floor(NS / (pw * 2)));
+      for (let k = 0; k < NS; k += stride) {
+        const d = (k - wp + NS) % NS;
+        if (d < gap) { pen = false; continue; }
+        let v = s.data[k];
+        // conserva i picchi: prendi il valore più distante dalla media nel blocco
+        if (stride > 1) { for (let j = 1; j < stride && k + j < NS; j++) { const u = s.data[k + j]; if (Math.abs(u - s.mid) > Math.abs(v - s.mid)) v = u; } }
+        if (Number.isNaN(v)) { pen = false; continue; }
+        const xx = L + pw * k / NS, yy = y(Math.max(yMin - 5, Math.min(yMax + 5, v)));
+        if (pen) ctx.lineTo(xx, yy); else { ctx.moveTo(xx, yy); pen = true; }
+      }
+      ctx.stroke();
+    }
+    if (relTicks) {
+      ctx.fillStyle = col.accent;
+      for (let k = 0; k < NS; k++) if (buf.rel[k]) { const xx = L + pw * k / NS; ctx.fillRect(xx - 0.5, T + ph - 4 - 3 * buf.rel[k], 1.5, 4 + 3 * buf.rel[k]); }
+    }
+    // cursore di scrittura
+    ctx.fillStyle = col.line; ctx.fillRect(L + pw * wp / NS, T, 1, ph);
+    ctx.restore();
+    ctx.fillStyle = col.muted; ctx.textAlign = 'left'; ctx.fillText(unit, 2, T + 8);
+  }
+
+  function niceMax(m, floor) { m = Math.max(m, floor); const p = Math.pow(10, Math.floor(Math.log10(m))); for (const k of [1, 2, 2.5, 5, 10]) if (k * p >= m) return k * p; return 10 * p; }
+  function maxOf(...arrs) { let m = 0; for (const a of arrs) for (let k = 0; k < a.length; k++) if (a[k] > m) m = a[k]; return m; }
+
+  // ---------- morfologia ----------
+  const MW = 600, MH = 760;
+  const particles = [];
+  function synPos(s) {
+    const c = comps[s.comp];
+    if (c.type === 'soma') { const a = -Math.PI * 0.85 + s.frac * Math.PI * 0.9 + (s.side > 0 ? Math.PI : 0); return [300 + Math.cos(a) * 24, 330 + Math.sin(a) * 22]; }
+    const x = c.x0 + (c.x1 - c.x0) * s.frac, y = c.y0 + (c.y1 - c.y0) * s.frac;
+    const dx = c.x1 - c.x0, dy = c.y1 - c.y0, l = Math.hypot(dx, dy) || 1;
+    const off = 6 + c.d * 0.8;
+    return [x - dy / l * off * s.side, y + dx / l * off * s.side];
+  }
+  nrn.synapses.forEach(s => { s.pos = synPos(s); s.flash = 0; s.seen = s.lastRel; });
+
+  function drawMorph(dtReal) {
+    const { w, h } = fit(morph);
+    const ctx = morph.getContext('2d');
+    ctx.setTransform(w / MW, 0, 0, h / MH, 0, 0);
+    ctx.clearRect(0, 0, MW, MH);
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+
+    // pipetta patch sul soma
+    ctx.fillStyle = col.grid; ctx.strokeStyle = col.line; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(40, 250); ctx.lineTo(54, 240); ctx.lineTo(282, 326); ctx.lineTo(280, 334); ctx.closePath(); ctx.fill(); ctx.stroke();
+
+    // assone mielinizzato: guaina
+    for (const c of comps) if (c.type === 'internode' && nrn.params.myelin) {
+      ctx.strokeStyle = col.myelin; ctx.lineWidth = 11; ctx.beginPath(); ctx.moveTo(c.x0, c.y0 + 2); ctx.lineTo(c.x1, c.y1 - 2); ctx.stroke();
+      ctx.strokeStyle = col.line; ctx.lineWidth = 1; ctx.strokeRect(c.x0 - 5.5, c.y0 + 1.5, 11, c.y1 - c.y0 - 3);
+    }
+    // neuriti
+    for (const c of comps) {
+      if (c.type === 'soma') continue;
+      ctx.strokeStyle = vColor(nrn.V[c.i]);
+      ctx.lineWidth = c.type === 'term' ? 3 : Math.max(2, c.d * 1.7);
+      ctx.beginPath(); ctx.moveTo(c.x0, c.y0); ctx.lineTo(c.x1, c.y1); ctx.stroke();
+      if (c.type === 'node') { ctx.fillStyle = vColor(nrn.V[c.i]); ctx.fillRect(c.x0 - 4, c.y0, 8, c.y1 - c.y0); }
+    }
+    // soma piramidale
+    const vs = nrn.V[0];
+    ctx.fillStyle = vColor(vs); ctx.strokeStyle = col.ink; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(300, 302); ctx.quadraticCurveTo(328, 340, 322, 350); ctx.quadraticCurveTo(300, 358, 278, 350); ctx.quadraticCurveTo(272, 340, 300, 302); ctx.fill();
+    ctx.globalAlpha = 0.35; ctx.stroke(); ctx.globalAlpha = 1;
+    // nucleo
+    ctx.fillStyle = col.panel; ctx.globalAlpha = 0.5; ctx.beginPath(); ctx.ellipse(300, 336, 7, 6, 0, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
+    // bottone
+    const tc = comps[nrn.term];
+    ctx.fillStyle = vColor(nrn.V[nrn.term]); ctx.beginPath(); ctx.arc(tc.x1, tc.y1 + 3, 7, 0, Math.PI * 2); ctx.fill();
+
+    // sinapsi
+    const decay = Math.exp(-dtReal / 180);
+    for (const s of nrn.synapses) {
+      if (s.lastRel !== s.seen) { s.seen = s.lastRel; s.flash = 1; }
+      s.flash *= decay;
+      const [x, y] = s.pos;
+      const cc = s.kind === 'exc' ? col.exc : col.inh;
+      if (s.flash > 0.05) { ctx.globalAlpha = s.flash * 0.45; ctx.fillStyle = cc; ctx.beginPath(); ctx.arc(x, y, 4 + 7 * s.flash, 0, Math.PI * 2); ctx.fill(); }
+      ctx.globalAlpha = 0.55 + 0.45 * s.flash; ctx.fillStyle = cc;
+      ctx.beginPath(); ctx.arc(x, y, 2.6, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+
+    // elettrodo di registrazione
+    const c = comps[sel];
+    const ex = sel === 0 ? 312 : (c.x0 + c.x1) / 2, ey = sel === 0 ? 326 : (c.y0 + c.y1) / 2;
+    ctx.strokeStyle = col.accent; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(ex + 6, ey - 6); ctx.lineTo(ex + 46, ey - 46); ctx.stroke();
+    ctx.beginPath(); ctx.arc(ex, ey, 7, 0, Math.PI * 2); ctx.stroke();
+
+    // etichette
+    ctx.font = '11px "IBM Plex Sans", system-ui, sans-serif'; ctx.fillStyle = col.muted; ctx.textAlign = 'left';
+    ctx.fillText('ciuffo apicale', 120, 40); ctx.fillText('obliquo', 402, 210); ctx.fillText('dendriti basali', 120, 448);
+    ctx.fillText('AIS', 312, 376); ctx.fillText('nodi di Ranvier', 312, 470); ctx.fillText('patch clamp', 40, 238);
+
+    drawSynapseInset(ctx, dtReal);
+  }
+
+  // riquadro: sinapsi in uscita
+  const IX = 360, IY = 520, IW = 228, IH = 226;
+  const vesPos = [];
+  for (let k = 0; k < 12; k++) vesPos.push([IX + 52 + (k % 6) * 25, IY + 92 + Math.floor(k / 6) * 22]);
+  function drawSynapseInset(ctx, dtReal) {
+    const tc = comps[nrn.term];
+    ctx.strokeStyle = col.line; ctx.lineWidth = 1; ctx.setLineDash([3, 4]);
+    ctx.beginPath(); ctx.moveTo(tc.x1 + 8, tc.y1 + 2); ctx.lineTo(IX, IY + 60); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = col.panel; ctx.strokeStyle = col.line;
+    ctx.beginPath(); ctx.roundRect ? ctx.roundRect(IX, IY, IW, IH, 8) : ctx.rect(IX, IY, IW, IH); ctx.fill(); ctx.stroke();
+    ctx.font = '600 11px "Space Grotesk", system-ui, sans-serif'; ctx.fillStyle = col.muted; ctx.textAlign = 'left';
+    ctx.fillText('SINAPSI IN USCITA', IX + 12, IY + 20);
+    // bottone presinaptico
+    ctx.fillStyle = vColor(nrn.V[nrn.term]); ctx.globalAlpha = 0.25;
+    ctx.beginPath(); ctx.moveTo(IX + 30, IY + 40); ctx.quadraticCurveTo(IX + IW / 2, IY + 28, IX + IW - 30, IY + 40);
+    ctx.lineTo(IX + IW - 22, IY + 140); ctx.lineTo(IX + 22, IY + 140); ctx.closePath(); ctx.fill(); ctx.globalAlpha = 1;
+    ctx.strokeStyle = col.ink; ctx.globalAlpha = 0.5; ctx.stroke(); ctx.globalAlpha = 1;
+    // canali Cav nella zona attiva
+    const caOpen = Math.min(1, nrn.ca[nrn.term] / 3);
+    for (let k = 0; k < 5; k++) { const x = IX + 50 + k * 32; ctx.fillStyle = col.accent2; ctx.globalAlpha = 0.35 + 0.65 * caOpen; ctx.fillRect(x, IY + 136, 6, 8); }
+    ctx.globalAlpha = 1;
+    // vescicole
+    for (let k = 0; k < 12; k++) {
+      const [x, y] = vesPos[k];
+      ctx.beginPath(); ctx.arc(x, y, 8, 0, Math.PI * 2);
+      if (nrn.vesicles[k]) { ctx.fillStyle = col.accent; ctx.globalAlpha = 0.85; ctx.fill(); ctx.globalAlpha = 1; }
+      else { ctx.strokeStyle = col.muted; ctx.setLineDash([2, 2]); ctx.stroke(); ctx.setLineDash([]); }
+    }
+    // fessura e membrana post-sinaptica
+    ctx.fillStyle = col.ink; ctx.globalAlpha = 0.5; ctx.fillRect(IX + 22, IY + 168, IW - 44, 3); ctx.globalAlpha = 1;
+    for (let k = 0; k < 6; k++) { ctx.fillStyle = col.exc; ctx.fillRect(IX + 44 + k * 28, IY + 162, 8, 10); }
+    // particelle di glutammato
+    const nrel = nrn.totalReleased;
+    if (nrel > drawSynapseInset.last) {
+      for (let r = 0; r < Math.min(6, nrel - drawSynapseInset.last); r++) {
+        const x0 = IX + 50 + Math.random() * (IW - 100);
+        for (let j = 0; j < 9; j++) particles.push({ x: x0, y: IY + 146, vx: (Math.random() - 0.5) * 0.06, vy: 0.02 + Math.random() * 0.04, life: 1 });
+      }
+    }
+    drawSynapseInset.last = nrel;
+    ctx.fillStyle = col.accent;
+    for (let k = particles.length - 1; k >= 0; k--) {
+      const p = particles[k];
+      p.x += p.vx * dtReal; p.y = Math.min(IY + 165, p.y + p.vy * dtReal); p.life -= dtReal / 900;
+      if (p.life <= 0) { particles.splice(k, 1); continue; }
+      ctx.globalAlpha = p.life; ctx.beginPath(); ctx.arc(p.x, p.y, 1.8, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    ctx.font = '11px "IBM Plex Mono", ui-monospace, monospace'; ctx.fillStyle = col.muted;
+    const ready = nrn.vesicles.reduce((a, b) => a + b, 0);
+    ctx.fillText(`vescicole pronte ${ready}/12`, IX + 12, IY + 196);
+    ctx.fillText(`[Ca²⁺] ${nrn.ca[nrn.term].toFixed(2)} µM`, IX + 12, IY + 212);
+  }
+  drawSynapseInset.last = 0;
+
+  // selezione del compartimento con un tocco
+  morph.addEventListener('click', e => {
+    const r = morph.getBoundingClientRect();
+    const x = (e.clientX - r.left) * MW / r.width, y = (e.clientY - r.top) * MH / r.height;
+    let best = -1, bd = 18;
+    for (const c of comps) {
+      let d;
+      if (c.type === 'soma') d = Math.hypot(x - 300, y - 332) - 16;
+      else {
+        const dx = c.x1 - c.x0, dy = c.y1 - c.y0, l2 = dx * dx + dy * dy || 1;
+        const f = Math.max(0, Math.min(1, ((x - c.x0) * dx + (y - c.y0) * dy) / l2));
+        d = Math.hypot(x - c.x0 - f * dx, y - c.y0 - f * dy);
+      }
+      if (d < bd) { bd = d; best = c.i; }
+    }
+    if (best >= 0) { sel = best; buf.vx.fill(NaN); updateInspector(true); }
+  });
+
+  // ---------- ispettore ----------
+  const TYPE = { soma: 'soma', apic: 'dendrite apicale', dend: 'dendrite basale', ais: 'segmento iniziale', internode: 'internodo', node: 'nodo di Ranvier', term: 'terminale assonico' };
+  const elName = document.getElementById('i-name'), elMeta = document.getElementById('i-meta'), elCh = document.getElementById('i-ch'), elRec = document.getElementById('i-rec');
+  const fmt = (v, d) => (Math.abs(v) < 1e-9 ? 0 : v).toFixed(d);
+  function updateInspector(rebuild) {
+    const c = comps[sel];
+    if (rebuild) {
+      elName.textContent = c.name;
+      document.getElementById('lg-sel').textContent = 'V elettrodo (' + c.name.toLowerCase() + ')';
+    }
+    const area = nrn.area[sel];
+    elMeta.innerHTML = [
+      ['Tipo', TYPE[c.type]], ['Diametro', c.d.toFixed(1) + ' µm'], ['Lunghezza', c.L + ' µm'],
+      ['Distanza dal soma', Math.round(c.dist - (c.type === 'soma' ? 0 : c.L / 2)) + ' µm'],
+      ['Capacità', nrn.C[sel].toFixed(2) + ' pF'], ['Vm', nrn.V[sel].toFixed(1) + ' mV'], ['[Ca²⁺]i', nrn.ca[sel].toFixed(3) + ' µM'],
+    ].map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join('');
+    const chs = nrn.channelState(sel);
+    elCh.innerHTML = chs.map(ch => {
+      const dens = ch.gbar / (area * 1e-2);
+      const blocked = ch.key !== 'L' && nrn.params.block[ch.key] === 0;
+      return `<tr class="${blocked ? 'blocked' : ''}"><td>${ch.label}</td><td class="num">${dens < 1 ? dens.toFixed(3) : dens.toFixed(1)} mS/cm²</td>` +
+        `<td><div class="bar"><i style="width:${Math.min(100, Math.sqrt(ch.open) * 100).toFixed(1)}%"></i></div></td><td class="num">${fmt(ch.I, 1)} pA</td></tr>`;
+    }).join('');
+    const here = nrn.synapses.filter(s => s.comp === sel);
+    const ne = here.filter(s => s.kind === 'exc').length, ni = here.length - ne;
+    let gA = 0, gN = 0, gGA = 0, gGB = 0;
+    const v = nrn.V[sel], B = nrn.params.block;
+    for (const s of here) {
+      if (s.kind === 'exc') { gA += 0.25 * s.rA * B.AMPA; gN += 0.15 * s.rN * B.NMDA / (1 + Math.exp(-0.062 * v) * nrn.params.mg / 3.57); }
+      else { gGA += 1.0 * s.rGA * B.GABAA; const s4 = Math.pow(s.sGB / s.sites * 5, 4); gGB += 1.5 * s.sites * B.GABAB * s4 / (s4 + 100); }
+    }
+    const rows = [['AMPA (GluA)', ne, gA, '0 mV'], ['NMDA (GluN), blocco Mg²⁺ ' + (100 / (1 + Math.exp(-0.062 * v) * nrn.params.mg / 3.57)).toFixed(0) + '% libero', ne, gN, '0 mV'],
+      ['GABA-A (Cl⁻)', ni, gGA, '−75 mV'], ['GABA-B → GIRK (K⁺)', ni, gGB, '−95 mV']];
+    elRec.innerHTML = rows.map(r => `<tr><td>${r[0]}</td><td class="num">${r[1]}</td><td class="num">${r[2].toFixed(2)} nS</td><td class="num">${r[3]}</td></tr>`).join('');
+  }
+
+  // ---------- comandi ----------
+  const $ = id => document.getElementById(id);
+  function bindRange(id, out, fmtFn, apply) {
+    const el = $(id), o = $(out);
+    const upd = () => { const v = parseFloat(el.value); o.textContent = fmtFn(v); apply(v); };
+    el.addEventListener('input', upd); upd();
+  }
+  bindRange('c-inj', 'o-inj', v => v + ' pA', v => { nrn.iinj[0] = v; });
+  bindRange('c-exc', 'o-exc', v => v + ' Hz', v => { nrn.params.excRate = v; });
+  bindRange('c-inh', 'o-inh', v => v + ' Hz', v => { nrn.params.inhRate = v; });
+  bindRange('c-mg', 'o-mg', v => v.toFixed(1) + ' mM', v => { nrn.params.mg = v; });
+  bindRange('c-temp', 'o-temp', v => v + ' °C', v => { nrn.params.temperature = v; });
+  $('c-myelin').addEventListener('change', e => { nrn.setMyelin(e.target.checked); updateInspector(true); });
+  $('c-speed').addEventListener('change', e => { speed = parseFloat(e.target.value); });
+  $('b-pause').addEventListener('click', e => { paused = !paused; e.target.textContent = paused ? 'Riprendi' : 'Pausa'; });
+  $('b-reset').addEventListener('click', () => { nrn.reset(); nrn.iinj[0] = parseFloat($('c-inj').value); clearBuffers(); lastRelCount = 0; drawSynapseInset.last = 0; });
+  $('b-pulse').addEventListener('click', () => { pulseSteps = Math.round(2 / DT); });
+  $('b-stimexc').addEventListener('click', () => {
+    const c = comps[sel];
+    const branch = (c.type === 'apic' || c.type === 'dend') ? c.name : null;
+    nrn.stimulateSynapses(s => s.kind === 'exc' && (branch ? comps[s.comp].name === branch : true));
+  });
+  $('b-stiminh').addEventListener('click', () => { nrn.stimulateSynapses(s => s.kind === 'inh', 0.5); });
+
+  const DRUGS = [
+    ['TTX', 'blocca Nav', 'Na', 0], ['TEA', 'blocca Kv', 'K', 0.1], ['XE991', 'blocca Kv7 (M)', 'M', 0], ['Cd²⁺', 'blocca Cav', 'Ca', 0],
+    ['ZD7288', 'blocca HCN', 'H', 0], ['Apamina', 'blocca SK', 'SK', 0], ['CNQX', 'blocca AMPA', 'AMPA', 0], ['D-AP5', 'blocca NMDA', 'NMDA', 0],
+    ['Bicucullina', 'blocca GABA-A', 'GABAA', 0], ['CGP 55845', 'blocca GABA-B', 'GABAB', 0],
+  ];
+  const drugBox = $('drugs');
+  for (const [name, what, key, val] of DRUGS) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'chip'; b.id = 'drug-' + key; b.setAttribute('aria-pressed', 'false');
+    b.innerHTML = `${name}<small>${what}</small>`;
+    b.addEventListener('click', () => {
+      const on = b.getAttribute('aria-pressed') !== 'true';
+      b.setAttribute('aria-pressed', String(on));
+      nrn.params.block[key] = on ? val : 1;
+      updateInspector(false);
+    });
+    drugBox.appendChild(b);
+  }
+  document.addEventListener('keydown', e => { if (e.code === 'Space' && e.target === document.body) { e.preventDefault(); $('b-pause').click(); } });
+
+  // ---------- ciclo principale ----------
+  const rT = $('r-t'), rV = $('r-v'), rF = $('r-f'), rD = $('r-d'), rQ = $('r-q');
+  let frame = 0;
+  function loop(now) {
+    const dtReal = Math.min(50, now - lastFrame); lastFrame = now;
+    if (!paused) {
+      const target = speed * Math.min(dtReal, 33) / DT;
+      let n = Math.floor(target); if (Math.random() < target - n) n++;
+      const t0 = performance.now();
+      for (let k = 0; k < n; k++) {
+        if (pulseSteps > 0) { nrn.iinj[0] = parseFloat($('c-inj').value) + 1500; if (--pulseSteps === 0) nrn.iinj[0] = parseFloat($('c-inj').value); }
+        nrn.step();
+        if (++stepCount % SAMPLE === 0) record();
+        if ((k & 63) === 0 && performance.now() - t0 > 14) break; // non bloccare la pagina su dispositivi lenti
+      }
+    }
+    drawMorph(dtReal);
+    const gmax = niceMax(maxOf(buf.gA, buf.gN, buf.gGA, buf.gGB) * 1.1, 2);
+    const cmax = niceMax(maxOf(buf.cs, buf.ct) * 1.1, 0.5);
+    drawTrace(trV, [{ data: buf.vs, color: col.ink, mid: -65 }, { data: buf.vt, color: col.accent2, width: 1.1, mid: -65 }, { data: buf.vx, color: col.accent, mid: -65 }], -95, 50, 'mV', [-80, -40, 0, 40]);
+    drawTrace(trG, [{ data: buf.gGB, color: col.gabab, mid: 0 }, { data: buf.gGA, color: col.inh, mid: 0 }, { data: buf.gN, color: col.nmda, mid: 0 }, { data: buf.gA, color: col.exc, mid: 0 }], 0, gmax, 'nS', [0, gmax / 2, gmax].map(v => +v.toFixed(2)));
+    drawTrace(trC, [{ data: buf.cs, color: col.ink, mid: 0 }, { data: buf.ct, color: col.accent2, mid: 0 }], 0, cmax, 'µM', [0, cmax / 2, cmax].map(v => +v.toFixed(2)), true);
+    if (frame++ % 10 === 0) {
+      rT.textContent = (nrn.t / 1000).toFixed(2) + ' s';
+      rV.textContent = nrn.V[0].toFixed(1) + ' mV';
+      rF.textContent = nrn.firingRate('soma', 2000).toFixed(1) + ' Hz';
+      rD.textContent = nrn.lastDelay == null ? '–' : (nrn.lastDelay * 1000).toFixed(0) + ' µs';
+      rQ.textContent = String(nrn.totalReleased);
+      updateInspector(false);
+    }
+    requestAnimationFrame(loop);
+  }
+  updateInspector(true);
+  requestAnimationFrame(loop);
+})();
+</script>
