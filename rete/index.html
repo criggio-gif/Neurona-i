@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="it">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Neurona-i Rete</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap">
+<style>
+/* Layout: banco di prova di una rete — a sinistra cosa entra (retina) e cosa scarica (raster), al centro cosa ha imparato ogni neurone, sotto la tavoletta per metterla alla prova. */
+:root {
+  --bg: #e9eef0; --panel: #f6f9fa; --ink: #12202a; --muted: #5a6b75; --line: #ccd6db; --grid: #dfe6e9;
+  --accent: #0a7c76; --accent2: #c2410c; --ok: #2f8a57; --bad: #b8255f;
+  --font-display: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --bg: #0c1317; --panel: #121c21; --ink: #e2eaee; --muted: #8b9ea8; --line: #24333b; --grid: #1a262c;
+    --accent: #3cc8bd; --accent2: #f39a5b; --ok: #5bd38f; --bad: #f2689a; color-scheme: dark; }
+}
+:root[data-theme="dark"] { --bg: #0c1317; --panel: #121c21; --ink: #e2eaee; --muted: #8b9ea8; --line: #24333b; --grid: #1a262c;
+  --accent: #3cc8bd; --accent2: #f39a5b; --ok: #5bd38f; --bad: #f2689a; color-scheme: dark; }
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 14px; line-height: 1.5; margin: 0;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 20px 40px; }
+.wrap { max-width: 1320px; margin: 0 auto; display: grid; gap: 16px; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; }
+h1 { font-size: 30px; font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+a { color: var(--accent); }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+header.top { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px 24px; }
+header.top p { margin: 4px 0 0; color: var(--muted); max-width: 72ch; }
+.readouts { display: flex; flex-wrap: wrap; gap: 8px; }
+.readout { border: 1px solid var(--line); background: var(--panel); border-radius: 6px; padding: 6px 10px; min-width: 112px; }
+.readout span { display: block; font-size: 11px; color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
+.readout b { font-family: var(--font-mono); font-weight: 500; font-size: 17px; font-variant-numeric: tabular-nums; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; min-width: 0; }
+.panel-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 6px 12px; margin-bottom: 10px; }
+.hint { color: var(--muted); font-size: 12.5px; margin: 8px 0 0; max-width: 70ch; }
+.bench { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 5fr); gap: 16px; align-items: start; }
+.left { display: grid; gap: 16px; min-width: 0; }
+.io { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px; align-items: start; }
+canvas.px { image-rendering: pixelated; display: block; }
+#retina { width: 144px; height: 144px; border: 1px solid var(--line); border-radius: 4px; }
+.verdict { display: grid; gap: 6px; }
+.verdict .big { font-family: var(--font-display); font-size: 44px; font-weight: 700; line-height: 1; }
+.verdict .row { display: flex; gap: 18px; flex-wrap: wrap; }
+.verdict .row div span { display: block; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.pill { display: inline-block; font-size: 12px; font-weight: 600; border-radius: 999px; padding: 2px 9px; border: 1px solid currentColor; }
+.pill.ok { color: var(--ok); } .pill.bad { color: var(--bad); } .pill.wait { color: var(--muted); }
+#raster { width: 100%; height: 200px; display: block; }
+#curve { width: 100%; height: 150px; display: block; }
+#fields { width: 100%; max-width: 100%; aspect-ratio: 1; display: block; }
+.btns { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+button { font: inherit; font-size: 13px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 6px; padding: 7px 12px; cursor: pointer; }
+button:hover { border-color: var(--muted); }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--panel); font-weight: 600; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; background: transparent; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
+.test { display: grid; grid-template-columns: auto auto minmax(0, 1fr); gap: 16px; align-items: start; }
+#pad { width: 224px; height: 224px; max-width: 100%; border: 1px dashed var(--muted); border-radius: 6px; background: var(--bg); touch-action: none; cursor: crosshair; display: block; }
+#padsmall { width: 96px; height: 96px; border: 1px solid var(--line); border-radius: 4px; }
+.scores { display: grid; gap: 4px; }
+.score { display: grid; grid-template-columns: 18px minmax(0, 1fr) 46px; gap: 8px; align-items: center; font-family: var(--font-mono); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.score i { display: block; height: 10px; border-radius: 3px; background: var(--grid); position: relative; overflow: hidden; }
+.score i b { position: absolute; inset: 0 auto 0 0; background: var(--muted); }
+.score.win i b { background: var(--accent); }
+.score.win { font-weight: 600; }
+.notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.notes ul { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 6px; }
+.notes li, .notes p { max-width: 68ch; }
+.notes p { margin: 8px 0 0; }
+@media (max-width: 980px) { .bench { grid-template-columns: minmax(0, 1fr); } .test { grid-template-columns: auto minmax(0, 1fr); } .test > .result { grid-column: 1 / -1; } }
+@media (max-width: 460px) { .io { grid-template-columns: minmax(0, 1fr); } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Neurona-i Rete</h1>
+      <p>49 neuroni spiking imparano da soli a distinguere le cifre: nessuno dice loro quale cifra stanno guardando. Si specializzano grazie a plasticità STDP, inibizione laterale e omeostasi. <a id="link-neuron" href="../index.html">Apri il neurone dettagliato</a></p>
+    </div>
+    <div class="readouts">
+      <div class="readout"><span>Esempi visti</span><b id="r-n">0</b></div>
+      <div class="readout"><span>Accuratezza</span><b id="r-acc">–</b></div>
+      <div class="readout"><span>Neuroni con un ruolo</span><b id="r-lab">0/49</b></div>
+    </div>
+  </header>
+
+  <section class="panel">
+    <div class="btns">
+      <button id="b-train" class="primary">Avvia l'apprendimento</button>
+      <div class="seg" role="group" aria-label="Modalità">
+        <button id="m-watch" aria-pressed="true">Guarda un esempio alla volta</button>
+        <button id="m-fast" aria-pressed="false">Veloce</button>
+      </div>
+      <button id="b-reset">Nuova rete</button>
+      <span class="hint" style="margin:0" id="status">Rete appena nata: pesi casuali, nessun neurone sa ancora nulla.</span>
+    </div>
+  </section>
+
+  <main class="bench">
+    <div class="left">
+      <section class="panel">
+        <div class="panel-head"><h2>Retina e risposta</h2><span class="hint mono" style="margin:0">16×16 pixel → spike di Poisson, fino a 64 Hz</span></div>
+        <div class="io">
+          <canvas id="retina" class="px" width="16" height="16" aria-label="Immagine presentata alla retina"></canvas>
+          <div class="verdict">
+            <div class="row">
+              <div><span>Cifra mostrata</span><div class="big" id="v-true">–</div></div>
+              <div><span>La rete dice</span><div class="big" id="v-pred">–</div></div>
+            </div>
+            <div><span class="pill wait" id="v-pill">in attesa</span></div>
+            <p class="hint" style="margin:0" id="v-note">L'etichetta vera serve solo a dare un nome ai neuroni dopo che si sono specializzati. Non entra mai nella regola di apprendimento.</p>
+          </div>
+        </div>
+      </section>
+      <section class="panel">
+        <div class="panel-head"><h2>Spike dello strato eccitatorio</h2><span class="hint mono" style="margin:0">350 ms per immagine</span></div>
+        <canvas id="raster" aria-label="Raster degli spike dei 49 neuroni"></canvas>
+        <p class="hint">Ogni riga è un neurone. In verde acqua i neuroni che rappresentano la cifra scelta dalla rete. L'inibizione laterale fa sì che pochi neuroni vincano la competizione.</p>
+      </section>
+      <section class="panel">
+        <div class="panel-head"><h2>Curva di apprendimento</h2><span class="hint mono" style="margin:0">ultimi 200 esempi, valutati prima di vederne l'etichetta</span></div>
+        <canvas id="curve" aria-label="Accuratezza in funzione degli esempi visti"></canvas>
+      </section>
+    </div>
+
+    <section class="panel">
+      <div class="panel-head"><h2>Cosa ha imparato ogni neurone</h2><span class="hint" style="margin:0">pesi sinaptici retina → neurone</span></div>
+      <canvas id="fields" aria-label="Campi recettivi appresi dai 49 neuroni"></canvas>
+      <p class="hint">Ogni riquadro mostra i 256 pesi in ingresso a un neurone: più scuro significa sinapsi più forte. All'inizio sono rumore; con l'esperienza ogni neurone diventa il "prototipo" di una cifra. Il numero in angolo è la cifra a cui quel neurone risponde di più.</p>
+    </section>
+  </main>
+
+  <section class="panel">
+    <div class="panel-head"><h2>Mettila alla prova</h2><span class="hint" style="margin:0">disegna una cifra da 0 a 9</span></div>
+    <div class="test">
+      <canvas id="pad" width="224" height="224" aria-label="Tavoletta per disegnare una cifra"></canvas>
+      <div style="display:grid; gap:8px; justify-items:start">
+        <canvas id="padsmall" class="px" width="16" height="16" aria-label="La cifra come la vede la retina"></canvas>
+        <span class="hint" style="margin:0">come la vede la retina</span>
+        <button id="b-clear">Cancella</button>
+      </div>
+      <div class="result" style="display:grid; gap:8px; min-width:0">
+        <div class="verdict"><div class="row"><div><span>La rete dice</span><div class="big" id="t-pred">–</div></div></div></div>
+        <div class="scores" id="scores"></div>
+        <p class="hint" style="margin:0" id="t-note">Prima lascia imparare la rete per almeno un migliaio di esempi in modalità veloce.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="notes">
+    <div class="panel">
+      <h2>Gli ingredienti biologici</h2>
+      <ul>
+        <li><b>Neuroni integrate-and-fire a conduttanza.</b> Ogni neurone integra correnti sinaptiche eccitatorie (inversione 0 mV, come AMPA) e inibitorie (−100 mV) e scarica quando supera la soglia, con 5 ms di refrattarietà.</li>
+        <li><b>STDP.</b> Se un ingresso scarica poco prima del neurone, la sinapsi si rinforza; se arriva dopo, si indebolisce. Nel cervello questo passa dal Ca²⁺ che entra dai recettori NMDA, lo stesso meccanismo del <a href="../index.html">neurone dettagliato</a>.</li>
+        <li><b>Inibizione laterale.</b> Quando un neurone scarica inibisce tutti gli altri, come fanno gli interneuroni GABAergici. Ne nasce una competizione: il vincitore impara, gli altri no, e ognuno si specializza su qualcosa di diverso.</li>
+        <li><b>Omeostasi.</b> Ogni spike alza un po' la soglia del neurone, che poi torna lentamente indietro. Un neurone che vince troppo diventa meno eccitabile e lascia spazio agli altri.</li>
+        <li><b>Scaling sinaptico.</b> La somma dei pesi in ingresso a ogni neurone resta costante: rinforzare alcune sinapsi indebolisce le altre.</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h2>Quanto è intelligente</h2>
+      <p>È un'intelligenza rudimentale ma vera: impara dall'esperienza, senza un insegnante, e generalizza a cifre che non ha mai visto. Nelle nostre prove con 2000 esempi riconosce tra l'82 e il 91% delle cifre nuove, a seconda delle condizioni iniziali casuali.</p>
+      <p>I limiti sono altrettanto reali. Le cifre di addestramento sono generate al computer, non scritte da persone. Con 49 neuroni ogni cifra ha solo 4–6 prototipi, quindi una scrittura molto diversa può confonderla. La rete classifica e basta: non ragiona e non ricorda sequenze.</p>
+      <p>Il codice sta in <span class="mono">rete/snn-core.js</span> e gira anche in Node senza browser.</p>
+    </div>
+  </section>
+</div>
+
+<script src="digits.js"></script>
+<script src="snn-core.js"></script>
+<script>
+(function () {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  let net = SNN.createNetwork();
+  let seen = 0, running = false, mode = 'watch';
+  let hist = [], curve = [];
+  let last = null, anim = null, lastPick = 0, dirtyFields = true;
+  let lastCounts = null;
+
+  // ---------- colori ----------
+  let col = {};
+  function hexRgb(h) { h = h.replace('#', ''); if (h.length === 3) h = h.split('').map(c => c + c).join(''); const n = parseInt(h, 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; }
+  function readColors() {
+    const cs = getComputedStyle(document.documentElement);
+    for (const k of ['bg', 'panel', 'ink', 'muted', 'line', 'grid', 'accent', 'accent2', 'ok', 'bad']) col[k] = cs.getPropertyValue('--' + k).trim();
+    col.rgbPanel = hexRgb(col.panel); col.rgbInk = hexRgb(col.ink); dirtyFields = true;
+  }
+  readColors();
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readColors);
+  new MutationObserver(readColors).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+  function fit(c) {
+    const dpr = Math.min(2, devicePixelRatio || 1), r = c.getBoundingClientRect();
+    const w = Math.max(1, Math.round(r.width * dpr)), h = Math.max(1, Math.round(r.height * dpr));
+    if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+    const ctx = c.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { ctx, W: r.width, H: r.height };
+  }
+  function drawImg16(canvas, img) {
+    const ctx = canvas.getContext('2d'), id = ctx.createImageData(16, 16);
+    const a = col.rgbPanel, b = col.rgbInk;
+    for (let k = 0; k < 256; k++) { const v = img ? img[k] : 0; for (let c = 0; c < 3; c++) id.data[k * 4 + c] = a[c] + (b[c] - a[c]) * v; id.data[k * 4 + 3] = 255; }
+    ctx.putImageData(id, 0, 0);
+  }
+
+  // ---------- apprendimento ----------
+  function trainOne(record) {
+    const d = Math.floor(Math.random() * 10), img = Digits.render(d);
+    const spikes = record ? [] : null;
+    const counts = net.present(img, { learn: true, onSpike: record ? (type, i, t) => { if (type === 'exc') spikes.push(i, t); } : null });
+    let pred = -1;
+    if (seen >= 100) { pred = net.classify(counts).digit; hist.push(pred === d ? 1 : 0); if (hist.length > 200) hist.shift(); }
+    net.observe(counts, d); seen++;
+    if (seen % 25 === 0) { net.assignLabels(); dirtyFields = true; }
+    if (seen % 50 === 0 && hist.length >= 50) curve.push([seen, acc()]);
+    last = { img, d, pred, counts, spikes };
+  }
+  const acc = () => hist.reduce((a, b) => a + b, 0) / hist.length;
+
+  // ---------- disegno: campi recettivi ----------
+  const fieldsCanvas = $('fields');
+  const off = document.createElement('canvas'); off.width = 16; off.height = 16;
+  function drawFields(highlight) {
+    const { ctx, W } = fit(fieldsCanvas);
+    ctx.clearRect(0, 0, W, W);
+    const n = 7, gap = Math.max(3, W * 0.012), tile = (W - gap * (n - 1)) / n;
+    const octx = off.getContext('2d'), id = octx.createImageData(16, 16), a = col.rgbPanel, b = col.rgbInk;
+    let hmax = 0; if (highlight) for (const c of highlight) hmax = Math.max(hmax, c);
+    for (let j = 0; j < net.nE; j++) {
+      let mx = 1e-6; for (let i = 0; i < 256; i++) mx = Math.max(mx, net.W[j * 256 + i]);
+      for (let i = 0; i < 256; i++) { const v = Math.min(1, net.W[j * 256 + i] / mx); for (let c = 0; c < 3; c++) id.data[i * 4 + c] = a[c] + (b[c] - a[c]) * v; id.data[i * 4 + 3] = 255; }
+      octx.putImageData(id, 0, 0);
+      const x = (j % n) * (tile + gap), y = Math.floor(j / n) * (tile + gap);
+      ctx.imageSmoothingEnabled = false; ctx.drawImage(off, x, y, tile, tile);
+      ctx.strokeStyle = col.line; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, tile - 1, tile - 1);
+      if (highlight && highlight[j] > 0) { ctx.strokeStyle = col.accent; ctx.lineWidth = 1.5 + 3 * highlight[j] / hmax; ctx.strokeRect(x + 1.5, y + 1.5, tile - 3, tile - 3); }
+      const lab = net.labels[j];
+      if (lab >= 0) {
+        const fs = Math.max(10, tile * 0.2);
+        ctx.font = `600 ${fs}px "IBM Plex Mono", ui-monospace, monospace`; ctx.textAlign = 'right'; ctx.textBaseline = 'top';
+        ctx.fillStyle = col.panel; ctx.fillRect(x + tile - fs * 0.85 - 3, y + 3, fs * 0.85, fs * 1.1);
+        ctx.fillStyle = col.accent2; ctx.fillText(String(lab), x + tile - 4, y + 4);
+      }
+    }
+  }
+
+  // ---------- raster ----------
+  function drawRaster(spikes, upto, predDigit) {
+    const { ctx, W, H } = fit($('raster'));
+    ctx.clearRect(0, 0, W, H);
+    const L = 30, R = 6, T = 4, B = 16, pw = W - L - R, ph = H - T - B, rowH = ph / net.nE;
+    ctx.font = '10.5px "IBM Plex Mono", ui-monospace, monospace'; ctx.fillStyle = col.muted; ctx.strokeStyle = col.grid; ctx.lineWidth = 1;
+    ctx.textAlign = 'center';
+    for (let ms = 0; ms <= 350; ms += 50) { const x = Math.round(L + pw * ms / 350) + 0.5; ctx.beginPath(); ctx.moveTo(x, T); ctx.lineTo(x, T + ph); ctx.stroke(); ctx.fillText(ms === 350 ? '350 ms' : String(ms), Math.min(x, W - 22), H - 3); }
+    ctx.textAlign = 'right'; ctx.fillText('1', L - 6, T + 8); ctx.fillText('49', L - 6, T + ph);
+    if (!spikes) return;
+    for (let k = 0; k < spikes.length; k += 2) {
+      const j = spikes[k], t = spikes[k + 1]; if (t > upto) continue;
+      ctx.fillStyle = (predDigit >= 0 && net.labels[j] === predDigit) ? col.accent : col.ink;
+      ctx.fillRect(L + pw * t / 350 - 1, T + j * rowH, 2.2, Math.max(2, rowH - 0.8));
+    }
+    if (upto < 350) { ctx.fillStyle = col.line; ctx.fillRect(L + pw * upto / 350, T, 1, ph); }
+  }
+
+  // ---------- curva ----------
+  function drawCurve() {
+    const { ctx, W, H } = fit($('curve'));
+    ctx.clearRect(0, 0, W, H);
+    const L = 38, R = 8, T = 6, B = 16, pw = W - L - R, ph = H - T - B;
+    const xmax = Math.max(1000, Math.ceil(seen / 1000) * 1000);
+    ctx.font = '10.5px "IBM Plex Mono", ui-monospace, monospace'; ctx.fillStyle = col.muted; ctx.strokeStyle = col.grid; ctx.lineWidth = 1;
+    ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+    for (const p of [0, 50, 100]) { const y = Math.round(T + ph * (1 - p / 100)) + 0.5; ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(W - R, y); ctx.stroke(); ctx.fillText(p + '%', L - 5, y); }
+    ctx.setLineDash([3, 4]); const y10 = T + ph * 0.9; ctx.beginPath(); ctx.moveTo(L, y10); ctx.lineTo(W - R, y10); ctx.stroke(); ctx.setLineDash([]);
+    ctx.textAlign = 'left'; ctx.fillText('caso: 10%', L + 4, y10 - 7);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    const step = xmax <= 2000 ? 500 : 1000;
+    for (let x = 0; x <= xmax; x += step) { const xx = L + pw * x / xmax; ctx.fillText(String(x), Math.max(L + 6, Math.min(xx, W - R - 16)), H - 3); }
+    if (curve.length < 2) return;
+    ctx.beginPath();
+    curve.forEach(([n, a], k) => { const x = L + pw * n / xmax, y = T + ph * (1 - a); k ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+    ctx.strokeStyle = col.accent; ctx.lineWidth = 2; ctx.stroke();
+    const [n, a] = curve[curve.length - 1]; ctx.fillStyle = col.accent; ctx.beginPath(); ctx.arc(L + pw * n / xmax, T + ph * (1 - a), 3.5, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // ---------- pannello verdetto ----------
+  function showVerdict() {
+    if (!last) return;
+    drawImg16($('retina'), last.img);
+    $('v-true').textContent = last.d;
+    $('v-pred').textContent = last.pred >= 0 ? last.pred : '?';
+    const pill = $('v-pill');
+    if (last.pred < 0) { pill.className = 'pill wait'; pill.textContent = 'sta ancora formando i primi prototipi'; }
+    else if (last.pred === last.d) { pill.className = 'pill ok'; pill.textContent = 'riconosciuta'; }
+    else { pill.className = 'pill bad'; pill.textContent = 'sbagliata'; }
+  }
+  function updateReadouts() {
+    $('r-n').textContent = seen.toLocaleString('it-IT');
+    $('r-acc').textContent = hist.length >= 50 ? (acc() * 100).toFixed(0) + '%' : '–';
+    let n = 0; for (const l of net.labels) if (l >= 0) n++;
+    $('r-lab').textContent = n + '/49';
+    let s;
+    if (!seen) s = 'Rete appena nata: pesi casuali, nessun neurone sa ancora nulla.';
+    else if (seen < 300) s = 'I neuroni iniziano a competere: i campi recettivi sono ancora sfocati.';
+    else if (seen < 1200) s = 'Emergono i primi prototipi. Prova la modalità veloce per arrivare a 2000 esempi.';
+    else s = 'La rete si è specializzata. Disegna una cifra qui sotto per metterla alla prova.';
+    $('status').textContent = (running ? '' : (seen ? 'In pausa. ' : '')) + s;
+  }
+
+  // ---------- ciclo ----------
+  function loop(now) {
+    if (running) {
+      if (mode === 'fast') {
+        const t0 = performance.now();
+        while (performance.now() - t0 < 14) trainOne(false);
+        showVerdict(); drawRaster(null, 0, -1);
+        if (dirtyFields || now - lastPick > 300) { drawFields(); dirtyFields = false; lastPick = now; }
+        drawCurve(); updateReadouts();
+      } else {
+        if (!anim || now - anim.start > 1100) {
+          trainOne(true); anim = { start: now };
+          showVerdict(); drawFields(last.counts); drawCurve(); updateReadouts();
+        }
+        const upto = Math.min(350, (now - anim.start) / 700 * 350);
+        drawRaster(last.spikes, upto, last.pred);
+      }
+    }
+    requestAnimationFrame(loop);
+  }
+
+  function setRunning(on) { running = on; $('b-train').textContent = on ? 'Pausa' : (seen ? 'Riprendi l\'apprendimento' : 'Avvia l\'apprendimento'); updateReadouts(); }
+  $('b-train').addEventListener('click', () => setRunning(!running));
+  function setMode(m) { mode = m; $('m-watch').setAttribute('aria-pressed', String(m === 'watch')); $('m-fast').setAttribute('aria-pressed', String(m === 'fast')); anim = null; }
+  $('m-watch').addEventListener('click', () => setMode('watch'));
+  $('m-fast').addEventListener('click', () => setMode('fast'));
+  $('b-reset').addEventListener('click', () => {
+    net = SNN.createNetwork(); seen = 0; hist = []; curve = []; last = null; anim = null;
+    $('v-true').textContent = '–'; $('v-pred').textContent = '–'; $('v-pill').className = 'pill wait'; $('v-pill').textContent = 'in attesa';
+    drawImg16($('retina'), null); drawFields(); drawRaster(null, 0, -1); drawCurve(); setRunning(false); renderScores(null);
+  });
+
+  // ---------- tavoletta ----------
+  const pad = $('pad'), pctx = pad.getContext('2d');
+  let drawing = false, lastPt = null, hasInk = false;
+  function padPoint(e) { const r = pad.getBoundingClientRect(); return [(e.clientX - r.left) * 224 / r.width, (e.clientY - r.top) * 224 / r.height]; }
+  function clearPad() { pctx.clearRect(0, 0, 224, 224); hasInk = false; drawImg16($('padsmall'), null); $('t-pred').textContent = '–'; renderScores(null); drawFields(); }
+  pad.addEventListener('pointerdown', e => { drawing = true; lastPt = padPoint(e); pad.setPointerCapture(e.pointerId); stroke(lastPt, lastPt); });
+  pad.addEventListener('pointermove', e => { if (!drawing) return; const p = padPoint(e); stroke(lastPt, p); lastPt = p; });
+  const end = () => { if (drawing) { drawing = false; recognize(); } };
+  pad.addEventListener('pointerup', end); pad.addEventListener('pointercancel', end);
+  function stroke(a, b) { pctx.strokeStyle = col.ink; pctx.lineWidth = 20; pctx.lineCap = 'round'; pctx.beginPath(); pctx.moveTo(a[0], a[1]); pctx.lineTo(b[0], b[1]); pctx.stroke(); hasInk = true; }
+  $('b-clear').addEventListener('click', clearPad);
+
+  function recognize() {
+    if (!hasInk) return;
+    const data = pctx.getImageData(0, 0, 224, 224).data, img28 = new Float32Array(28 * 28);
+    for (let y = 0; y < 28; y++) for (let x = 0; x < 28; x++) {
+      let s = 0; for (let yy = 0; yy < 8; yy++) for (let xx = 0; xx < 8; xx++) s += data[((y * 8 + yy) * 224 + x * 8 + xx) * 4 + 3];
+      img28[y * 28 + x] = s / (64 * 255);
+    }
+    const img = Digits.normalize(img28, 28);
+    drawImg16($('padsmall'), img);
+    let any = false; for (const l of net.labels) if (l >= 0) any = true;
+    const counts = net.present(img, { learn: false });
+    drawFields(counts);
+    if (!any) { $('t-pred').textContent = '?'; $('t-note').textContent = 'La rete non ha ancora imparato nulla: avvia l\'apprendimento (meglio in modalità veloce) e riprova.'; renderScores(null); return; }
+    const r = net.classify(counts);
+    $('t-pred').textContent = r.digit >= 0 ? r.digit : '?';
+    renderScores(r.score, r.digit);
+    const active = Array.from(counts).filter(c => c > 0).length;
+    $('t-note').textContent = `Hanno scaricato ${active} neuroni su 49 (bordati in verde acqua nei campi recettivi). Il punteggio di una cifra è la media degli spike dei suoi neuroni.` + (seen < 1000 ? ' La rete ha visto meno di 1000 esempi: le risposte sono ancora poco affidabili.' : '');
+  }
+  function renderScores(score, win) {
+    const box = $('scores');
+    if (!score) { box.innerHTML = ''; return; }
+    const mx = Math.max(1e-6, ...score);
+    box.innerHTML = score.map((s, c) => `<div class="score${c === win ? ' win' : ''}"><span>${c}</span><i><b style="width:${(s / mx * 100).toFixed(1)}%"></b></i><span>${s.toFixed(1)}</span></div>`).join('');
+  }
+
+  drawImg16($('retina'), null); drawImg16($('padsmall'), null);
+  drawFields(); drawRaster(null, 0, -1); drawCurve(); updateReadouts();
+  addEventListener('resize', () => { drawFields(); drawCurve(); drawRaster(last && last.spikes, 350, last ? last.pred : -1); });
+  requestAnimationFrame(loop);
+})();
+</script>
